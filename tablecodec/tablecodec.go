@@ -38,11 +38,11 @@ var (
 
 const (
 	idLen     = 8
-	prefixLen = 1 + idLen /*tableID*/ + 2
+	prefixLen = tablePrefixLength + idLen /*tableID*/ + tablePrefixSepLength
 	// RecordRowKeyLen is public for calculating average row size.
 	RecordRowKeyLen       = prefixLen + idLen /*handle*/
 	tablePrefixLength     = 1
-	recordPrefixSepLength = 2
+	tablePrefixSepLength = 2
 )
 
 // TableSplitKeyLen is the length of key 't{table_id}' which is used for table split.
@@ -69,9 +69,32 @@ func EncodeRowKeyWithHandle(tableID int64, handle int64) kv.Key {
 	return buf
 }
 
+// decodeTableRecordPrefix decode table record prefix  "t[tableID]_r".
+func decodeTableRecordPrefix(buf []byte) (b []byte, tableID int64, err error) {
+	if len(buf) < prefixLen {
+		return nil, 0, errors.New("prefix too short")
+	}
+	if !bytes.Equal(buf[0:tablePrefixLength], tablePrefix) {
+		return nil, 0, errors.New("tablePrefix not match")
+	}
+	buf = buf[tablePrefixLength:]
+	buf, tableID, err = codec.DecodeInt(buf)
+	if err != nil {
+		return nil, 0, err
+	}
+	if !bytes.Equal(buf[0:tablePrefixSepLength], recordPrefixSep) {
+		return  nil, 0, errors.New("recordPrefixSep not match")
+	}
+	buf = buf[tablePrefixSepLength:]
+	return buf, tableID, nil
+}
 // DecodeRecordKey decodes the key and gets the tableID, handle.
 func DecodeRecordKey(key kv.Key) (tableID int64, handle int64, err error) {
-	/* Your code here */
+	buf, tableID, err := decodeTableRecordPrefix(key)
+	if err != nil {
+		return 0, 0, err
+	}
+	buf, handle, err = codec.DecodeInt(buf)
 	return
 }
 
@@ -92,10 +115,36 @@ func EncodeIndexSeekKey(tableID int64, idxID int64, encodedValue []byte) kv.Key 
 	return key
 }
 
+// decodeTableIndexPrefix decode table index prefix  "t[tableID]_i".
+func decodeTableIndexPrefix(buf []byte) (b []byte, tableID int64, err error) {
+	if len(buf) < prefixLen {
+		return nil, 0, errors.New("prefix too short")
+	}
+	if !bytes.Equal(buf[0:tablePrefixLength], tablePrefix) {
+		return nil, 0, errors.New("tablePrefix not match")
+	}
+	buf = buf[tablePrefixLength:]
+	buf, tableID, err = codec.DecodeInt(buf)
+	if err != nil {
+		return nil, 0, err
+	}
+	if !bytes.Equal(buf[0:tablePrefixSepLength], indexPrefixSep) {
+		return  nil, 0, errors.New("indexPrefixSep not match")
+	}
+	buf = buf[tablePrefixSepLength:]
+	return buf, tableID, nil
+}
 // DecodeIndexKeyPrefix decodes the key and gets the tableID, indexID, indexValues.
 func DecodeIndexKeyPrefix(key kv.Key) (tableID int64, indexID int64, indexValues []byte, err error) {
-	/* Your code here */
-	return tableID, indexID, indexValues, nil
+	buf, tableID, err := decodeTableIndexPrefix(key)
+	if err != nil {
+		return 0, 0, nil, err
+	}
+	indexValues, indexID, err = codec.DecodeInt(buf)
+	if err != nil {
+		return 0, 0, nil, err
+	}
+	return
 }
 
 // DecodeIndexKey decodes the key and gets the tableID, indexID, indexValues.
